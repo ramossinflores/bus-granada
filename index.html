@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bus Granada">
+<meta name="theme-color" content="#0e0f11">
+<link rel="manifest" id="manifest-placeholder">
+<title>Bus Granada</title>
+<script>
+// ── PWA: inyectar manifest dinámicamente ──────────────────────────────────────
+(function() {
+  const manifest = {
+    name: "Bus Granada",
+    short_name: "Bus GR",
+    description: "Horarios L-225 y L-226 Granada",
+    start_url: "./",
+    display: "standalone",
+    background_color: "#0e0f11",
+    theme_color: "#0e0f11",
+    orientation: "portrait",
+    icons: [
+      {
+        src: "data:image/svg+xml," + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%230e0f11'/><text x='96' y='130' font-size='110' text-anchor='middle'>🚌</text></svg>`),
+        sizes: "192x192",
+        type: "image/svg+xml",
+        purpose: "any maskable"
+      }
+    ]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  document.getElementById('manifest-placeholder').setAttribute('href', url);
+})();
+
+// ── PWA: registrar Service Worker inline ──────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  const swCode = `
+    const CACHE = 'bus-granada-v1';
+    const FONTS = [
+      'https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap'
+    ];
+
+    self.addEventListener('install', e => {
+      e.waitUntil(
+        caches.open(CACHE).then(c => c.addAll(FONTS).catch(() => {}))
+      );
+      self.skipWaiting();
+    });
+
+    self.addEventListener('activate', e => {
+      e.waitUntil(
+        caches.keys().then(keys =>
+          Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+        )
+      );
+      self.clients.claim();
+    });
+
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => cached))
+      );
+    });
+  `;
+  const blob = new Blob([swCode], {type: 'application/javascript'});
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(() => {});
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0e0f11;
+    --surface: #16181c;
+    --surface2: #1e2128;
+    --border: #2a2d35;
+    --accent: #4ade80;
+    --accent2: #60a5fa;
+    --text: #f0f0f0;
+    --muted: #6b7280;
+    --warning: #fbbf24;
+    --line225: #60a5fa;
+    --line226: #4ade80;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(14,15,17,0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 10px;
+  }
+
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .app-title {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+
+  .clock {
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--accent);
+    background: rgba(74,222,128,0.08);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(74,222,128,0.2);
+  }
+
+  .filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 3px;
+    border: 1px solid var(--border);
+  }
+
+  .filter-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .filter-btn.active {
+    background: var(--surface2);
+    color: var(--text);
+  }
+
+  .filter-btn.active.l225 { color: var(--line225); }
+  .filter-btn.active.l226 { color: var(--line226); }
+  .filter-btn.active.dir-ida { background: rgba(96,165,250,0.12); color: var(--line225); }
+  .filter-btn.active.dir-vuelta { background: rgba(74,222,128,0.12); color: var(--line226); }
+  .filter-btn.active.day { background: var(--surface2); color: var(--text); }
+
+  .next-bus-banner {
+    margin: 12px 16px;
+    background: linear-gradient(135deg, rgba(74,222,128,0.1), rgba(96,165,250,0.1));
+    border: 1px solid rgba(74,222,128,0.25);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .next-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+  }
+
+  .next-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 28px;
+    font-weight: 500;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .next-info {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .countdown-pill {
+    background: rgba(74,222,128,0.15);
+    border: 1px solid rgba(74,222,128,0.3);
+    border-radius: 20px;
+    padding: 6px 14px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .countdown-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .countdown-label {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .section-header {
+    padding: 16px 16px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-line-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+
+  .badge-225 {
+    background: rgba(96,165,250,0.15);
+    color: var(--line225);
+    border: 1px solid rgba(96,165,250,0.25);
+  }
+
+  .badge-226 {
+    background: rgba(74,222,128,0.15);
+    color: var(--line226);
+    border: 1px solid rgba(74,222,128,0.25);
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+
+  .schedule-list {
+    padding: 0 16px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .time-row {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    gap: 12px;
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .time-row.is-next {
+    border-color: rgba(74,222,128,0.4);
+    background: rgba(74,222,128,0.05);
+  }
+
+  .time-row.is-next::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 3px 0 0 3px;
+  }
+
+  .time-row.passed {
+    opacity: 0.35;
+  }
+
+  .dep-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 20px;
+    font-weight: 500;
+    min-width: 56px;
+    color: var(--text);
+  }
+
+  .time-row.is-next .dep-time { color: var(--accent); }
+
+  .stops-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex: 1;
+    overflow: hidden;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  .stop-chip {
+    font-size: 10px;
+    color: var(--muted);
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    white-space: nowrap;
+    font-weight: 400;
+  }
+
+  .stop-arrow {
+    font-size: 9px;
+    color: var(--border);
+    padding: 0 2px;
+  }
+
+  .arr-time {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 40px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .next-badge {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--accent);
+    background: rgba(74,222,128,0.15);
+    padding: 2px 6px;
+    border-radius: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+
+  .no-results {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .no-results .icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 16px;
+    opacity: 0.5;
+  }
+
+  .bottom-space { height: 40px; }
+
+  /* hide scrollbar but keep scroll */
+  ::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <div class="app-title">🚌 Bus Granada</div>
+    <div class="clock" id="clock">--:--</div>
+  </div>
+  <div class="filters">
+    <div class="filter-group" id="lineFilter">
+      <button class="filter-btn active" data-line="all">Todas</button>
+      <button class="filter-btn l225" data-line="225">L-225</button>
+      <button class="filter-btn l226" data-line="226">L-226</button>
+    </div>
+    <div class="filter-group" id="dirFilter">
+      <button class="filter-btn active dir-ida" data-dir="ida">→ Granada</button>
+      <button class="filter-btn dir-vuelta" data-dir="vuelta">← Granada</button>
+    </div>
+    <div class="filter-group" id="dayFilter">
+      <button class="filter-btn active day" data-day="lv">L–V</button>
+      <button class="filter-btn day" data-day="sab">Sáb</button>
+      <button class="filter-btn day" data-day="dom">Dom</button>
+    </div>
+  </div>
+</header>
+
+<div class="next-bus-banner" id="nextBanner">
+  <div>
+    <div class="next-label">Próximo autobús</div>
+    <div class="next-time" id="nextTime">--:--</div>
+    <div class="next-info" id="nextInfo">—</div>
+  </div>
+  <div class="countdown-pill">
+    <div class="countdown-num" id="countdownNum">--</div>
+    <div class="countdown-label">min</div>
+  </div>
+</div>
+
+<div id="scheduleContainer"></div>
+<div class="bottom-space"></div>
+
+<script>
+// ===================== DATA =====================
+const data = {
+  "225": {
+    name: "L-225 Granada–Pinos Puente",
+    color: "225",
+    lv: {
+      ida: [
+        { dep: "07:45", stops: ["Ctra.Córdoba 08:00","Pinos 08:20"], arr: "08:25" },
+        { dep: "08:15", stops: ["Ctra.Córdoba 08:30","Pinos 08:50"], arr: "08:55" },
+        { dep: "08:45", stops: ["Ctra.Córdoba 09:00","Pinos 09:20"], arr: "09:25" },
+        { dep: "09:15", stops: ["Ctra.Córdoba 09:30","Pinos 09:50"], arr: "09:55" },
+        { dep: "09:45", stops: ["Ctra.Córdoba 10:00","Pinos 10:20"], arr: "10:25" },
+        { dep: "10:15", stops: ["Ctra.Córdoba 10:30","Pinos 10:50"], arr: "10:55" },
+        { dep: "10:45", stops: ["Ctra.Córdoba 11:00","Pinos 11:20"], arr: "11:25" },
+        { dep: "11:15", stops: ["Ctra.Córdoba 11:30","Pinos 11:50"], arr: "11:55" },
+        { dep: "11:45", stops: ["Ctra.Córdoba 12:00","Pinos 12:20"], arr: "12:25" },
+        { dep: "12:15", stops: ["Ctra.Córdoba 12:30","Pinos 12:50"], arr: "12:55" },
+        { dep: "12:45", stops: ["Ctra.Córdoba 13:00","Pinos 13:20"], arr: "13:25" },
+        { dep: "13:15", stops: ["Ctra.Córdoba 13:30","Pinos 13:50"], arr: "13:55" },
+        { dep: "13:45", stops: ["Ctra.Córdoba 14:00","Pinos 14:20"], arr: "14:25" },
+        { dep: "14:15", stops: ["Ctra.Córdoba 14:30","Pinos 14:50"], arr: "14:55" },
+        { dep: "16:45", stops: ["Ctra.Córdoba 17:00","Pinos 17:20"], arr: "17:25" },
+        { dep: "17:15", stops: ["Ctra.Córdoba 17:30","Pinos 17:50"], arr: "17:55" },
+        { dep: "17:45", stops: ["Ctra.Córdoba 18:00","Pinos 18:20"], arr: "18:25" },
+        { dep: "18:15", stops: ["Ctra.Córdoba 18:30","Pinos 18:50"], arr: "18:55" },
+        { dep: "18:45", stops: ["Ctra.Córdoba 19:00","Pinos 19:20"], arr: "19:25" },
+        { dep: "19:15", stops: ["Ctra.Córdoba 19:30","Pinos 19:50"], arr: "19:55" },
+        { dep: "19:45", stops: ["Ctra.Córdoba 20:00","Pinos 20:20"], arr: "20:25" },
+        { dep: "20:15", stops: ["Ctra.Córdoba 20:30","Pinos 20:50"], arr: "20:55" },
+        { dep: "20:45", stops: ["Ctra.Córdoba 21:00","Pinos 21:20"], arr: "21:25" },
+        { dep: "21:45", stops: ["Ctra.Córdoba 22:00","Pinos 22:20"], arr: "22:25" },
+      ],
+      vuelta: [
+        { dep: "08:30", stops: ["Ctra.Córdoba 08:45","Granada 09:05"], arr: "09:10" },
+        { dep: "09:00", stops: ["Ctra.Córdoba 09:15","Granada 09:35"], arr: "09:40" },
+        { dep: "09:30", stops: ["Ctra.Córdoba 09:45","Granada 10:05"], arr: "10:10" },
+        { dep: "10:00", stops: ["Ctra.Córdoba 10:15","Granada 10:35"], arr: "10:40" },
+        { dep: "10:30", stops: ["Ctra.Córdoba 10:45","Granada 11:05"], arr: "11:10" },
+        { dep: "11:00", stops: ["Ctra.Córdoba 11:15","Granada 11:35"], arr: "11:40" },
+        { dep: "11:30", stops: ["Ctra.Córdoba 11:45","Granada 12:05"], arr: "12:10" },
+        { dep: "12:00", stops: ["Ctra.Córdoba 12:15","Granada 12:35"], arr: "12:40" },
+        { dep: "12:30", stops: ["Ctra.Córdoba 12:45","Granada 13:05"], arr: "13:10" },
+        { dep: "13:00", stops: ["Ctra.Córdoba 13:15","Granada 13:35"], arr: "13:40" },
+        { dep: "13:30", stops: ["Ctra.Córdoba 13:45","Granada 14:05"], arr: "14:10" },
+        { dep: "14:00", stops: ["Ctra.Córdoba 14:15","Granada 14:35"], arr: "14:40" },
+        { dep: "14:30", stops: ["Ctra.Córdoba 14:45","Granada 15:05"], arr: "15:10" },
+        { dep: "15:00", stops: ["Ctra.Córdoba 15:15","Granada 15:35"], arr: "15:40" },
+        { dep: "17:30", stops: ["Ctra.Córdoba 17:45","Granada 18:05"], arr: "18:10" },
+        { dep: "18:00", stops: ["Ctra.Córdoba 18:15","Granada 18:35"], arr: "18:40" },
+        { dep: "18:30", stops: ["Ctra.Córdoba 18:45","Granada 19:05"], arr: "19:10" },
+        { dep: "19:00", stops: ["Ctra.Córdoba 19:15","Granada 19:35"], arr: "19:40" },
+        { dep: "19:30", stops: ["Ctra.Córdoba 19:45","Granada 20:05"], arr: "20:10" },
+        { dep: "20:00", stops: ["Ctra.Córdoba 20:15","Granada 20:35"], arr: "20:40" },
+        { dep: "20:30", stops: ["Ctra.Córdoba 20:45","Granada 21:05"], arr: "21:10" },
+        { dep: "21:00", stops: ["Ctra.Córdoba 21:15","Granada 21:35"], arr: "21:40" },
+        { dep: "21:30", stops: ["Ctra.Córdoba 21:45","Granada 22:05"], arr: "22:10" },
+      ]
+    },
+    sab: {
+      ida: [
+        { dep: "09:15", stops: ["Ctra.Córdoba 09:25","Pinos 09:45"], arr: "09:49" },
+        { dep: "12:15", stops: ["Ctra.Córdoba 12:25","Pinos 12:45"], arr: "12:49" },
+        { dep: "14:30", stops: ["Ctra.Córdoba 14:40","Pinos 15:00"], arr: "15:04" },
+        { dep: "16:30", stops: ["Ctra.Córdoba 16:40","Pinos 17:00"], arr: "17:04" },
+        { dep: "18:30", stops: ["Ctra.Córdoba 18:40","Pinos 19:00"], arr: "19:04" },
+        { dep: "19:30", stops: ["Ctra.Córdoba 19:40","Pinos 20:00"], arr: "20:04" },
+      ],
+      vuelta: [
+        { dep: "10:00", stops: ["Ctra.Córdoba 10:05","Granada 10:15"], arr: "10:30" },
+        { dep: "13:00", stops: ["Ctra.Córdoba 13:05","Granada 13:15"], arr: "13:30" },
+        { dep: "15:30", stops: ["Ctra.Córdoba 15:35","Granada 15:45"], arr: "16:00" },
+        { dep: "17:30", stops: ["Ctra.Córdoba 17:35","Granada 17:45"], arr: "18:00" },
+        { dep: "19:30", stops: ["Ctra.Córdoba 19:35","Granada 19:45"], arr: "20:00" },
+        { dep: "20:30", stops: ["Ctra.Córdoba 20:35","Granada 20:45"], arr: "21:00" },
+      ]
+    },
+    dom: {
+      ida: [
+        { dep: "09:15", stops: ["Ctra.Córdoba 09:25","Pinos 09:45"], arr: "09:49" },
+        { dep: "12:15", stops: ["Ctra.Córdoba 12:25","Pinos 12:45"], arr: "12:49" },
+        { dep: "14:30", stops: ["Ctra.Córdoba 14:40","Pinos 15:00"], arr: "15:04" },
+        { dep: "16:30", stops: ["Ctra.Córdoba 16:40","Pinos 17:00"], arr: "17:04" },
+        { dep: "18:30", stops: ["Ctra.Córdoba 18:40","Pinos 19:00"], arr: "19:04" },
+        { dep: "19:30", stops: ["Ctra.Córdoba 19:40","Pinos 20:00"], arr: "20:04" },
+      ],
+      vuelta: [
+        { dep: "10:00", stops: ["Ctra.Córdoba 10:05","Granada 10:15"], arr: "10:30" },
+        { dep: "13:00", stops: ["Ctra.Córdoba 13:05","Granada 13:15"], arr: "13:30" },
+        { dep: "15:30", stops: ["Ctra.Córdoba 15:35","Granada 15:45"], arr: "16:00" },
+        { dep: "17:30", stops: ["Ctra.Córdoba 17:35","Granada 17:45"], arr: "18:00" },
+        { dep: "19:30", stops: ["Ctra.Córdoba 19:35","Granada 19:45"], arr: "20:00" },
+        { dep: "20:30", stops: ["Ctra.Córdoba 20:35","Granada 20:45"], arr: "21:00" },
+      ]
+    }
+  },
+  "226": {
+    name: "L-226 Granada–Zujaira",
+    color: "226",
+    lv: {
+      ida: [
+        { dep: "06:15", stops: ["Ctra.Córdoba 06:35","Pinos 06:55","Casanueva 07:00","Zujaira 07:05"], arr: "07:10" },
+        { dep: "06:45", stops: ["Ctra.Córdoba 07:05","Pinos 07:25","Casanueva 07:30","Zujaira 07:35"], arr: "07:40" },
+        { dep: "14:45", stops: ["Ctra.Córdoba 15:05","Pinos 15:25","Casanueva 15:30","Zujaira 15:35"], arr: "15:40" },
+        { dep: "15:15", stops: ["Ctra.Córdoba 15:35","Pinos 15:55","Casanueva 16:00","Zujaira 16:05"], arr: "16:10" },
+        { dep: "15:45", stops: ["Ctra.Córdoba 16:05","Pinos 16:25","Casanueva 16:30","Zujaira 16:35"], arr: "16:40" },
+        { dep: "21:15", stops: ["Ctra.Córdoba 21:35","Pinos 21:55","Casanueva 22:00","Zujaira 22:05"], arr: "22:10" },
+        { dep: "22:15", stops: ["Ctra.Córdoba 22:35","Pinos 22:55","Casanueva 23:00","Zujaira 23:05"], arr: "23:10" },
+        { dep: "23:00", stops: ["Ctra.Córdoba 23:20","Pinos 23:40","Casanueva 23:45","Zujaira 23:50"], arr: "23:55" },
+      ],
+      vuelta: [
+        { dep: "06:45", stops: ["Casanueva 06:50","Pinos 07:00","Ctra.Córdoba 07:15","Granada 07:35"], arr: "07:40" },
+        { dep: "07:15", stops: ["Casanueva 07:20","Pinos 07:30","Ctra.Córdoba 07:45","Granada 08:05"], arr: "08:10" },
+        { dep: "07:45", stops: ["Casanueva 07:50","Pinos 08:00","Ctra.Córdoba 08:15","Granada 08:35"], arr: "08:40" },
+        { dep: "15:45", stops: ["Casanueva 15:50","Pinos 16:00","Ctra.Córdoba 16:15","Granada 16:35"], arr: "16:40" },
+        { dep: "16:15", stops: ["Casanueva 16:20","Pinos 16:30","Ctra.Córdoba 16:45","Granada 17:05"], arr: "17:10" },
+        { dep: "16:45", stops: ["Casanueva 16:50","Pinos 17:00","Ctra.Córdoba 17:15","Granada 17:35"], arr: "17:40" },
+        { dep: "22:15", stops: ["Casanueva 22:20","Pinos 22:30","Ctra.Córdoba 22:45","Granada 23:05"], arr: "23:10" },
+      ]
+    },
+    sab: {
+      ida: [
+        { dep: "06:10", stops: ["Ctra.Córdoba 06:25","Pinos 06:35","Casanueva 06:40","Zujaira 06:45"], arr: "06:50" },
+        { dep: "07:45", stops: ["Ctra.Córdoba 08:00","Pinos 08:10","Casanueva 08:15","Zujaira 08:18"], arr: "08:20" },
+        { dep: "10:45", stops: ["Ctra.Córdoba 11:00","Pinos 11:10","Casanueva 11:15","Zujaira 11:18"], arr: "11:20" },
+        { dep: "13:45", stops: ["Ctra.Córdoba 14:00","Pinos 14:10","Casanueva 14:15","Zujaira 14:18"], arr: "14:20" },
+        { dep: "15:30", stops: ["Ctra.Córdoba 15:50","Pinos 16:00","Casanueva 16:10","Zujaira 16:13"], arr: "16:15" },
+        { dep: "17:30", stops: ["Ctra.Córdoba 17:50","Pinos 18:00","Casanueva 18:10","Zujaira 18:13"], arr: "18:15" },
+        { dep: "20:30", stops: ["Ctra.Córdoba 20:50","Pinos 21:00","Casanueva 21:10","Zujaira 21:13"], arr: "21:15" },
+        { dep: "21:30", stops: ["Ctra.Córdoba 21:50","Pinos 22:00","Casanueva 22:10","Zujaira 22:13"], arr: "22:15" },
+        { dep: "22:15", stops: ["Ctra.Córdoba 22:30","Pinos 22:45","Casanueva 22:50","Zujaira 22:55"], arr: "23:00" },
+        { dep: "23:00", stops: ["Ctra.Córdoba 23:15","Pinos 23:35","Casanueva 23:40","Zujaira 23:43"], arr: "23:45" },
+      ],
+      vuelta: [
+        { dep: "06:50", stops: ["Casanueva 06:55","Pinos 07:00","Ctra.Córdoba 07:15","Granada 07:30"], arr: "07:40" },
+        { dep: "08:20", stops: ["Casanueva 08:25","Pinos 08:30","Ctra.Córdoba 08:45","Granada 08:50"], arr: "09:00" },
+        { dep: "11:20", stops: ["Casanueva 11:25","Pinos 11:30","Ctra.Córdoba 11:45","Granada 11:50"], arr: "12:00" },
+        { dep: "14:20", stops: ["Casanueva 14:25","Pinos 14:30","Ctra.Córdoba 14:45","Granada 14:50"], arr: "15:00" },
+        { dep: "16:20", stops: ["Casanueva 16:25","Pinos 16:30","Ctra.Córdoba 16:45","Granada 16:50"], arr: "17:00" },
+        { dep: "18:20", stops: ["Casanueva 18:25","Pinos 18:30","Ctra.Córdoba 18:45","Granada 18:50"], arr: "19:00" },
+        { dep: "21:20", stops: ["Casanueva 21:25","Pinos 21:30","Ctra.Córdoba 21:45","Granada 21:50"], arr: "22:00" },
+        { dep: "22:20", stops: ["Casanueva 22:25","Pinos 22:30","Ctra.Córdoba 22:45","Granada 22:50"], arr: "23:00" },
+        { dep: "23:00", stops: ["Casanueva 23:05","Pinos 23:10","Ctra.Córdoba 23:25","Granada 23:40"], arr: "23:45" },
+      ]
+    },
+    dom: {
+      ida: [
+        { dep: "07:45", stops: ["Ctra.Córdoba 08:00","Pinos 08:10","Casanueva 08:15","Zujaira 08:18"], arr: "08:20" },
+        { dep: "10:45", stops: ["Ctra.Córdoba 11:00","Pinos 11:10","Casanueva 11:14","Zujaira 11:18"], arr: "11:20" },
+        { dep: "13:45", stops: ["Ctra.Córdoba 14:00","Pinos 14:10","Casanueva 14:15","Zujaira 14:18"], arr: "14:20" },
+        { dep: "15:30", stops: ["Ctra.Córdoba 15:50","Pinos 16:00","Casanueva 16:10","Zujaira 16:13"], arr: "16:15" },
+        { dep: "17:30", stops: ["Ctra.Córdoba 17:50","Pinos 18:00","Casanueva 18:10","Zujaira 18:13"], arr: "18:15" },
+        { dep: "20:30", stops: ["Ctra.Córdoba 20:50","Pinos 21:00","Casanueva 21:10","Zujaira 21:13"], arr: "21:15" },
+        { dep: "21:30", stops: ["Ctra.Córdoba 21:50","Pinos 22:00","Casanueva 22:10","Zujaira 22:13"], arr: "22:15" },
+        { dep: "22:15", stops: ["Ctra.Córdoba 22:30","Pinos 22:45","Casanueva 22:50","Zujaira 22:55"], arr: "23:00" },
+      ],
+      vuelta: [
+        { dep: "08:20", stops: ["Casanueva 08:25","Pinos 08:30","Ctra.Córdoba 08:45","Granada 08:50"], arr: "09:00" },
+        { dep: "11:20", stops: ["Casanueva 11:25","Pinos 11:30","Ctra.Córdoba 11:45","Granada 11:50"], arr: "12:00" },
+        { dep: "14:20", stops: ["Casanueva 14:25","Pinos 14:30","Ctra.Córdoba 14:45","Granada 14:50"], arr: "15:00" },
+        { dep: "16:20", stops: ["Casanueva 16:25","Pinos 16:30","Ctra.Córdoba 16:45","Granada 16:50"], arr: "17:00" },
+        { dep: "18:20", stops: ["Casanueva 18:25","Pinos 18:30","Ctra.Córdoba 18:45","Granada 18:50"], arr: "19:00" },
+        { dep: "21:20", stops: ["Casanueva 21:25","Pinos 21:30","Ctra.Córdoba 21:45","Granada 21:50"], arr: "22:00" },
+        { dep: "22:20", stops: ["Casanueva 22:25","Pinos 22:30","Ctra.Córdoba 22:45","Granada 22:50"], arr: "23:00" },
+        { dep: "23:00", stops: ["Casanueva 23:05","Pinos 23:10","Ctra.Córdoba 23:25","Granada 23:40"], arr: "23:45" },
+      ]
+    }
+  }
+};
+
+// ===================== STATE =====================
+let filterLine = "all", filterDir = "ida", filterDay = "lv";
+
+function toMins(t) {
+  const [h,m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function nowMins() {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+}
+
+function getAutoDay() {
+  const d = new Date().getDay();
+  if (d === 0) return "dom";
+  if (d === 6) return "sab";
+  return "lv";
+}
+
+function updateClock() {
+  const n = new Date();
+  const h = String(n.getHours()).padStart(2,"0");
+  const m = String(n.getMinutes()).padStart(2,"0");
+  document.getElementById("clock").textContent = h + ":" + m;
+}
+
+function getFilteredBuses() {
+  const lines = filterLine === "all" ? ["225","226"] : [filterLine];
+  let all = [];
+  for (const line of lines) {
+    const schedules = data[line][filterDay][filterDir];
+    if (schedules) {
+      schedules.forEach(s => all.push({ ...s, line }));
+    }
+  }
+  all.sort((a,b) => toMins(a.dep) - toMins(b.dep));
+  return all;
+}
+
+function updateNextBanner(buses) {
+  const now = nowMins();
+  const next = buses.find(b => toMins(b.dep) >= now);
+  if (!next) {
+    document.getElementById("nextTime").textContent = "—";
+    document.getElementById("nextInfo").textContent = "No hay más servicios hoy";
+    document.getElementById("countdownNum").textContent = "—";
+    return;
+  }
+  const mins = toMins(next.dep) - now;
+  document.getElementById("nextTime").textContent = next.dep;
+  document.getElementById("nextInfo").textContent = "L-" + next.line + " · " + (filterDir === "ida" ? "desde Granada" : "desde " + (next.line === "225" ? "Pinos Puente" : "Zujaira"));
+  document.getElementById("countdownNum").textContent = mins === 0 ? "0" : mins;
+}
+
+function render() {
+  const buses = getFilteredBuses();
+  const now = nowMins();
+  const nextIdx = buses.findIndex(b => toMins(b.dep) >= now);
+  updateNextBanner(buses);
+
+  const container = document.getElementById("scheduleContainer");
+  if (buses.length === 0) {
+    container.innerHTML = `<div class="no-results"><span class="icon">🕐</span>No hay servicios con estos filtros</div>`;
+    return;
+  }
+
+  // Group by line
+  const groups = {};
+  buses.forEach((b, i) => {
+    if (!groups[b.line]) groups[b.line] = [];
+    groups[b.line].push({ ...b, idx: i });
+  });
+
+  let html = "";
+  for (const line of Object.keys(groups).sort()) {
+    const lineData = data[line];
+    html += `<div class="section-header">
+      <span class="section-line-badge badge-${line}">L-${line}</span>
+      <span class="section-title">${filterDir === "ida" ? "Desde Granada" : "Hacia Granada"}</span>
+    </div>`;
+    html += `<div class="schedule-list">`;
+
+    groups[line].forEach((bus) => {
+      const depMins = toMins(bus.dep);
+      const isPassed = depMins < now;
+      const isNext = depMins === toMins(buses[nextIdx >= 0 ? nextIdx : 0]?.dep) && bus.idx === (nextIdx >= 0 ? nextIdx : -1);
+
+      const stopsHtml = bus.stops.map((s,i) => {
+        const parts = s.split(" ");
+        const time = parts.pop();
+        const name = parts.join(" ");
+        return `<span class="stop-chip">${name} ${time}</span>${i < bus.stops.length-1 ? '<span class="stop-arrow">›</span>' : ''}`;
+      }).join("");
+
+      html += `<div class="time-row${isPassed ? " passed" : ""}${isNext ? " is-next" : ""}">
+        <div class="dep-time">${bus.dep}</div>
+        <div class="stops-flow">${stopsHtml}</div>
+        <div class="arr-time">${bus.arr}</div>
+        ${isNext ? '<div class="next-badge">PRÓX</div>' : ""}
+      </div>`;
+    });
+
+    html += `</div>`;
+    if (Object.keys(groups).indexOf(line) < Object.keys(groups).length - 1) {
+      html += `<div class="divider"></div>`;
+    }
+  }
+
+  container.innerHTML = html;
+}
+
+// ===================== INIT =====================
+filterDay = getAutoDay();
+
+// Update active day button
+document.querySelectorAll("[data-day]").forEach(btn => {
+  btn.classList.toggle("active", btn.dataset.day === filterDay);
+  btn.classList.toggle("day", btn.dataset.day === filterDay);
+});
+
+// Filter listeners
+document.getElementById("lineFilter").addEventListener("click", e => {
+  const btn = e.target.closest("[data-line]");
+  if (!btn) return;
+  filterLine = btn.dataset.line;
+  document.querySelectorAll("[data-line]").forEach(b => {
+    b.classList.remove("active","l225","l226");
+    if (b === btn) { b.classList.add("active"); if (filterLine !== "all") b.classList.add("l"+filterLine); }
+  });
+  render();
+});
+
+document.getElementById("dirFilter").addEventListener("click", e => {
+  const btn = e.target.closest("[data-dir]");
+  if (!btn) return;
+  filterDir = btn.dataset.dir;
+  document.querySelectorAll("[data-dir]").forEach(b => {
+    b.classList.remove("active","dir-ida","dir-vuelta");
+    if (b === btn) { b.classList.add("active"); b.classList.add("dir-"+filterDir); }
+  });
+  render();
+});
+
+document.getElementById("dayFilter").addEventListener("click", e => {
+  const btn = e.target.closest("[data-day]");
+  if (!btn) return;
+  filterDay = btn.dataset.day;
+  document.querySelectorAll("[data-day]").forEach(b => {
+    b.classList.remove("active","day");
+    if (b === btn) { b.classList.add("active","day"); }
+  });
+  render();
+});
+
+updateClock();
+render();
+setInterval(() => { updateClock(); render(); }, 30000);
+</script>
+</body>
+</html>
