@@ -1,4 +1,4 @@
-# 🚌 Bus Granada
+# 🚌 Bus Granada - Pinos Puente
 
 > Horarios en tiempo real de las líneas **L-225** y **L-226** entre Granada y los pueblos del Poniente.  
 > Instalable como app en el móvil — sin tiendas, sin cuentas, sin anuncios.
